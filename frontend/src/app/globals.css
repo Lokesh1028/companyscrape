@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --muted: #64748b;
+  --accent: #4f46e5;
+  --ring: rgba(79, 70, 229, 0.35);
+}
+
+.dark {
+  --background: #030712;
+  --foreground: #f8fafc;
+  --card: #0c1222;
+  --muted: #94a3b8;
+  --accent: #818cf8;
+  --ring: rgba(129, 140, 248, 0.35);
+}
+
+body {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Print / Save as PDF: isolate report body, hide chrome */
+@media print {
+  @page {
+    margin: 1.2cm;
+  }
+
+  body {
+    background: white !important;
+    color: #0f172a !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  #report-print-area {
+    position: relative;
+    width: 100%;
+  }
+
+  #report-print-area a {
+    color: #1e3a8a;
+    text-decoration: underline;
+  }
+
+  #report-print-area .print-break-before {
+    break-before: page;
+  }
+}

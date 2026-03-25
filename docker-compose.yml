@@ -1,0 +1,18 @@
+# Optional PostgreSQL for production-like local runs.
+# Usage: docker compose up -d
+# Then set DATABASE_URL=postgresql+asyncpg://culture:culture@localhost:5432/culture
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: culture
+      POSTGRES_PASSWORD: culture
+      POSTGRES_DB: culture
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

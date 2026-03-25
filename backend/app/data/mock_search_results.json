@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "title": "Acme Corp — Careers & Culture",
+      "url": "https://acme.example/careers/culture",
+      "snippet": "We invest in learning, inclusive teams, and flexible work where possible.",
+      "query_match": "culture employee reviews company"
+    },
+    {
+      "title": "Acme Corp Reviews | Glassdoor",
+      "url": "https://www.glassdoor.com/Reviews/Acme-Corp-Reviews",
+      "snippet": "3.8/5 — Pros: smart colleagues. Cons: occasional crunch before launches.",
+      "query_match": "glassdoor reviews"
+    },
+    {
+      "title": "Working at Acme — Indeed",
+      "url": "https://www.indeed.com/cmp/Acme-Corp/reviews",
+      "snippet": "Interview process was fair; benefits are average for the industry.",
+      "query_match": "indeed reviews"
+    },
+    {
+      "title": "Acme Corp | LinkedIn",
+      "url": "https://www.linkedin.com/company/acme-corp",
+      "snippet": "Technology company · 5,000+ employees · Focus on cloud infrastructure.",
+      "query_match": "linkedin company"
+    },
+    {
+      "title": "Acme layoffs thread : r/technology",
+      "url": "https://www.reddit.com/r/technology/comments/acme_layoffs",
+      "snippet": "Unverified rumors of a small reduction in one region; no official statement.",
+      "query_match": "reddit layoffs"
+    },
+    {
+      "title": "Acme announces new COO amid growth push",
+      "url": "https://www.reuters.com/technology/acme-coo-appointment",
+      "snippet": "Leadership change as company scales enterprise sales.",
+      "query_match": "news leadership"
+    }
+  ]
+}

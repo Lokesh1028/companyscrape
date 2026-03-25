@@ -1,0 +1,26 @@
+# Python
+backend/.venv/
+backend/**/__pycache__/
+backend/**/*.py[cod]
+backend/.pytest_cache/
+backend/dev.db
+backend/*.db
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Env — never commit secrets (.env.example templates are tracked)
+.env
+.env.*
+!.env.example
+!**/.env.example
+!**/.env*.example
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# OS
+.DS_Store
