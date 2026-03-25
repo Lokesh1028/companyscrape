@@ -1,14 +1,12 @@
 """
-Search provider abstraction: SerpAPI, Google Programmable Search, or mock.
+Search provider abstraction: SerpAPI or Google Programmable Search.
+No mock — requires a valid API key.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -39,8 +37,8 @@ class SerpAPIProvider(SearchProvider):
         self.timeout = timeout
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(min=1, max=10),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(min=1, max=6),
         retry=retry_if_not_exception_type(ValueError),
     )
     async def search(self, query: str, *, num_results: int = 8) -> list[SearchResultItem]:
@@ -55,20 +53,16 @@ class SerpAPIProvider(SearchProvider):
             r.raise_for_status()
             data = r.json()
         if err := data.get("error"):
-            logger.warning("SerpAPI returned error for query %r: %s", query, err)
+            logger.error("SerpAPI error for %r: %s", query, err)
             raise ValueError(str(err))
         meta = data.get("search_metadata") or {}
         if meta.get("status") == "Error":
-            err = meta.get("error") or meta.get("google_url") or "SerpAPI search failed"
-            logger.warning("SerpAPI search_metadata error for %r: %s", query, err)
+            err = meta.get("error") or "SerpAPI search failed"
+            logger.error("SerpAPI metadata error for %r: %s", query, err)
             raise ValueError(str(err))
         organic = data.get("organic_results") or []
         if not organic:
-            logger.info(
-                "SerpAPI returned no organic_results for query %r (status=%s)",
-                query,
-                meta.get("status"),
-            )
+            logger.info("SerpAPI: no organic results for %r", query)
         out: list[SearchResultItem] = []
         for i, item in enumerate(organic[:num_results]):
             url = item.get("link") or ""
@@ -93,7 +87,7 @@ class GoogleCseProvider(SearchProvider):
         self.cx = cx
         self.timeout = timeout
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=6))
     async def search(self, query: str, *, num_results: int = 8) -> list[SearchResultItem]:
         params = {
             "key": self.api_key,
@@ -127,96 +121,25 @@ class GoogleCseProvider(SearchProvider):
         return out
 
 
-class MockSearchProvider(SearchProvider):
-    """Deterministic mock results for local UI/dev without API keys."""
-
-    async def search(self, query: str, *, num_results: int = 8) -> list[SearchResultItem]:
-        fixture = Path(__file__).resolve().parent.parent / "data" / "mock_search_results.json"
-        if fixture.exists():
-            raw = json.loads(fixture.read_text(encoding="utf-8"))
-            pool: list[dict[str, Any]] = raw.get("results", [])
-        else:
-            pool = _BUILTIN_MOCK
-
-        q_lower = query.lower()
-        tokens = [t for t in q_lower.split() if len(t) > 2][:5]
-        picked = [
-            r
-            for r in pool
-            if any(
-                (tok in (r.get("query_match") or "").lower())
-                or (tok in (r.get("snippet") or "").lower())
-                for tok in tokens
-            )
-        ]
-        if not picked:
-            picked = list(pool)
-        out: list[SearchResultItem] = []
-        for i, row in enumerate(picked[:num_results]):
-            out.append(
-                SearchResultItem(
-                    title=row.get("title"),
-                    url=row["url"],
-                    snippet=row.get("snippet"),
-                    source=_domain_from_url(row["url"]),
-                    rank=i + 1,
-                    query_used=query,
-                )
-            )
-        return out
-
-
-_BUILTIN_MOCK: list[dict[str, Any]] = [
-    {
-        "title": "Example Corp — Life & Culture",
-        "url": "https://example.com/careers/culture",
-        "snippet": "We value transparency, flexible hours, and continuous learning.",
-        "query_match": "culture reviews employee",
-    },
-    {
-        "title": "Example Corp employee reviews | Glassdoor",
-        "url": "https://www.glassdoor.com/Reviews/Example-Corp",
-        "snippet": "Mixed reviews: great peers, but management varies by team.",
-        "query_match": "glassdoor reviews",
-    },
-    {
-        "title": "r/careeradvice — Example Corp WLB?",
-        "url": "https://www.reddit.com/r/careeradvice/comments/example",
-        "snippet": "Anecdotal: long hours during releases; otherwise flexible.",
-        "query_match": "reddit culture",
-    },
-    {
-        "title": "Example Corp announces restructuring",
-        "url": "https://news.example.com/example-corp-restructuring",
-        "snippet": "Company cites market conditions; limited role reductions mentioned.",
-        "query_match": "layoffs news",
-    },
-]
-
-
 def get_search_provider(settings: Settings | None = None) -> SearchProvider:
     s = settings or get_settings()
     if s.search_provider == "serpapi":
         if not s.serpapi_api_key:
-            logger.warning(
-                "SEARCH_PROVIDER=serpapi but SERPAPI_API_KEY is empty — using mock search "
-                "(same results for every company). Set SERPAPI_API_KEY in backend/.env."
+            raise ValueError(
+                "SEARCH_PROVIDER=serpapi but SERPAPI_API_KEY is empty. "
+                "Set it in backend/.env to use real search."
             )
-            return MockSearchProvider()
         return SerpAPIProvider(s.serpapi_api_key, s.http_timeout_seconds)
     if s.search_provider == "google_cse":
         if not s.google_api_key or not s.google_cse_id:
-            logger.warning("Google CSE not fully configured — falling back to mock search")
-            return MockSearchProvider()
+            raise ValueError(
+                "SEARCH_PROVIDER=google_cse but GOOGLE_API_KEY / GOOGLE_CSE_ID missing."
+            )
         return GoogleCseProvider(
             s.google_api_key,
             s.google_cse_id,
             s.http_timeout_seconds,
         )
-    # explicit mock
-    if s.serpapi_api_key:
-        logger.warning(
-            "SEARCH_PROVIDER=mock but SERPAPI_API_KEY is set — still using mock search. "
-            "Set SEARCH_PROVIDER=serpapi to fetch real Google results via SerpAPI."
-        )
-    return MockSearchProvider()
+    raise ValueError(
+        f"Unknown SEARCH_PROVIDER={s.search_provider!r}. Use 'serpapi' or 'google_cse'."
+    )

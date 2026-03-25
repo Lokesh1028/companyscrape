@@ -72,8 +72,8 @@ class Settings(BaseSettings):
     )
     api_version: str = Field(default="1.0.0", alias="API_VERSION")
 
-    # Search providers (default serpapi: uses real Google results when SERPAPI_API_KEY is set; else mock)
-    search_provider: Literal["serpapi", "google_cse", "mock"] = Field(
+    # Search providers — must be serpapi or google_cse with valid keys
+    search_provider: Literal["serpapi", "google_cse"] = Field(
         default="serpapi",
         alias="SEARCH_PROVIDER",
     )
@@ -91,9 +91,9 @@ class Settings(BaseSettings):
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
     google_cse_id: str | None = Field(default=None, alias="GOOGLE_CSE_ID")
 
-    # LLM (OpenAI-compatible or Groq)
-    llm_provider: Literal["openai_compatible", "groq", "mock"] = Field(
-        default="mock",
+    # LLM — must be groq or openai_compatible with valid keys
+    llm_provider: Literal["openai_compatible", "groq"] = Field(
+        default="groq",
         alias="LLM_PROVIDER",
     )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
@@ -113,9 +113,9 @@ class Settings(BaseSettings):
     )
 
     # Scraping / research limits
-    http_timeout_seconds: float = Field(default=20.0, alias="HTTP_TIMEOUT_SECONDS")
-    max_search_queries: int = Field(default=12, alias="MAX_SEARCH_QUERIES")
-    max_urls_to_scrape: int = Field(default=22, alias="MAX_URLS_TO_SCRAPE")
+    http_timeout_seconds: float = Field(default=10.0, alias="HTTP_TIMEOUT_SECONDS")
+    max_search_queries: int = Field(default=4, alias="MAX_SEARCH_QUERIES")
+    max_urls_to_scrape: int = Field(default=6, alias="MAX_URLS_TO_SCRAPE")
     max_extract_chars_per_page: int = Field(
         default=12000,
         alias="MAX_EXTRACT_CHARS_PER_PAGE",

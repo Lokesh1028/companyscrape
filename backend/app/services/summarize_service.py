@@ -1,5 +1,6 @@
 """
-LLM summarization via OpenAI-compatible APIs, with a deterministic mock path.
+LLM summarization via OpenAI-compatible APIs (OpenAI, Groq, etc.).
+No mock — requires a valid API key. Returns an error if LLM fails.
 """
 
 from __future__ import annotations
@@ -75,8 +76,11 @@ class SummarizeService:
         evidence: list[EvidenceDict],
     ) -> dict[str, Any]:
         api_key = self.settings.llm_api_key
-        if self.settings.llm_provider == "mock" or not api_key:
-            return self._mock_summarize(company_name, evidence)
+        if not api_key:
+            raise ValueError(
+                f"LLM_PROVIDER={self.settings.llm_provider} but no API key configured. "
+                "Set the appropriate key in backend/.env."
+            )
 
         template = _load_prompt_template()
         prompt = (
@@ -89,100 +93,21 @@ class SummarizeService:
             api_key=api_key,
             base_url=self.settings.llm_base_url,
         )
-        try:
-            resp = await client.chat.completions.create(
-                model=self.settings.llm_model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You output only valid minified JSON for research summaries.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.2,
-                response_format={"type": "json_object"},
-            )
-            raw = resp.choices[0].message.content or "{}"
-            data = json.loads(_strip_json_fence(raw))
-            return data
-        except Exception as e:
-            logger.exception("LLM summarization failed: %s", e)
-            return self._mock_summarize(company_name, evidence)
-
-    def _mock_summarize(self, company_name: str, evidence: list[EvidenceDict]) -> dict[str, Any]:
-        """Rule-based fallback grounded in extracted snippets only."""
-        blob = " ".join(
-            (e.get("snippet") or "") + " " + (e.get("extracted_text") or "")[:500]
-            for e in evidence
-        ).lower()
-        pos_hits = sum(1 for w in ("great", "good", "flexible", "learning", "supportive") if w in blob)
-        neg_hits = sum(1 for w in ("toxic", "burnout", "layoff", "micromanag", "poor") if w in blob)
-        if neg_hits > pos_hits + 1:
-            sentiment = "Negative"
-        elif pos_hits > neg_hits + 1:
-            sentiment = "Positive"
-        else:
-            sentiment = "Mixed"
-
-        n = max(1, len(evidence))
-        confidence = min(0.9, 0.35 + 0.04 * min(n, 12))
-        if len(blob.strip()) < 200:
-            confidence *= 0.6
-
-        def cites() -> list[int]:
-            return list(range(1, min(4, n + 1)))
-
-        return {
-            "company_overview": (
-                f"Public sources mention {company_name} in the context of employee discussions, "
-                f"reviews, and news-like pages. Details below are synthesized only from provided snippets."
-            ),
-            "what_company_does": (
-                "Could not reliably infer core business from evidence alone."
-                if "technology" not in blob and "software" not in blob
-                else "Evidence suggests a technology-focused employer; verify on official channels."
-            ),
-            "culture_summary": (
-                "Sources include a mix of first-party career messaging and third-party reviews. "
-                "Treat qualitative claims as opinions unless corroborated."
-            ),
-            "employee_sentiment_summary": (
-                f"Heuristic mock summary: signals skew {sentiment.lower()} based on keyword density in evidence "
-                f"({len(evidence)} sources). Replace with real LLM when configured."
-            ),
-            "overall_sentiment": sentiment,
-            "confidence_score": round(confidence, 2),
-            "fact_vs_opinion_note": (
-                "Review sites and forums reflect subjective experiences; news excerpts may be closer to "
-                "reported fact but still require verification."
-            ),
-            "pros": [
-                {"point": "Peers and learning culture mentioned positively in some snippets.", "citations": cites()}
-            ],
-            "cons": [
+        resp = await client.chat.completions.create(
+            model=self.settings.llm_model_name,
+            messages=[
                 {
-                    "point": "Some sources mention workload or management variability.",
-                    "citations": cites(),
-                }
+                    "role": "system",
+                    "content": "You output only valid minified JSON for research summaries.",
+                },
+                {"role": "user", "content": prompt},
             ],
-            "red_flags": [],
-            "recent_signals": [
-                {
-                    "point": "Check news-related evidence items for timing and corroboration.",
-                    "citations": cites(),
-                }
-            ],
-            "leadership_signals": [
-                {"point": "Leadership changes or executive mentions appear in some sources.", "citations": cites()}
-            ],
-            "work_life_balance_signals": [
-                {"point": "Mixed anecdotes on hours and flexibility; not uniform across teams.", "citations": cites()}
-            ],
-            "career_growth_signals": [
-                {"point": "Growth and promotion narratives vary; confirm with multiple sources.", "citations": cites()}
-            ],
-            "recurring_themes": ["reviews", "culture", "management", "news"],
-        }
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(_strip_json_fence(raw))
+        return data
 
 
 def merge_llm_into_response(

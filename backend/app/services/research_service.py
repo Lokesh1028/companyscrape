@@ -1,6 +1,6 @@
 """
 Orchestrates search → scrape → extract → cluster → summarize → persist.
-Structured so a job queue worker can call `run_research_pipeline` later.
+All real API calls — no mock fallbacks.
 """
 
 from __future__ import annotations
@@ -78,19 +78,21 @@ async def run_research_pipeline(
             )
             if cached_resp is not None:
                 return cached_resp
-            logger.warning("Invalid cached payload for %s — re-running research", norm)
+            logger.warning("Invalid cached payload for %s — re-running", norm)
 
     report = await create_pending_report(session, company.id)
     await session.commit()
     await session.refresh(report)
 
     try:
+        # --- 1. Search via SerpAPI ---
         queries = generate_research_queries(
             display_name,
             max_queries=settings.max_search_queries,
         )
+        logger.info("Running %d search queries for %r", len(queries), display_name)
         provider = get_search_provider(settings)
-        logger.info("Research search backend: %s", type(provider).__name__)
+        logger.info("Search backend: %s", type(provider).__name__)
         search = provider.search
         sem = asyncio.Semaphore(4)
 
@@ -117,6 +119,17 @@ async def run_research_pipeline(
         for chunk in nested:
             flat.extend(chunk)
 
+        if not flat:
+            await mark_report_failed(session, report, "No search results found")
+            await session.commit()
+            raise ResearchPipelineError(
+                f"SerpAPI returned no search results for '{display_name}'. "
+                "Check the company name or try again later.",
+                code="no_search_results",
+            )
+
+        logger.info("Got %d raw search results for %r", len(flat), display_name)
+
         for row in flat:
             url = row.get("url") or ""
             row["trust_score"] = trust_score_for_domain(url, row.get("title"))
@@ -124,6 +137,7 @@ async def run_research_pipeline(
 
         ranked = rank_and_prioritize_urls(flat, max_urls=settings.max_urls_to_scrape)
 
+        # --- 2. Scrape pages ---
         scraper = ScrapeService(settings)
         extract_sem = asyncio.Semaphore(5)
 
@@ -163,39 +177,6 @@ async def run_research_pipeline(
 
         evidence_list = [e for e in await asyncio.gather(*[scrape_one(r) for r in ranked]) if e]
 
-        # If scraping yields little (blocked sites, robots, etc.), add low-trust snippet-only evidence
-        # so summarization can still run — especially useful with mock search URLs.
-        if len(evidence_list) < 3:
-            existing_urls = {e.get("source_url") for e in evidence_list}
-            for row in ranked:
-                if len(evidence_list) >= 8:
-                    break
-                url = row.get("url") or ""
-                if not url or url in existing_urls:
-                    continue
-                snip = (row.get("snippet") or "").strip()
-                if len(snip) < 20:
-                    continue
-                q = row.get("query_used") or ""
-                ev_snip: EvidenceDict = {
-                    "source_title": row.get("title"),
-                    "source_url": url,
-                    "domain": row.get("domain") or _domain(url),
-                    "query": q,
-                    "snippet": snip,
-                    "extracted_text": f"[Snippet-only — page body not retrieved]\n{snip}",
-                    "category_hint": category_hint_from_query_and_url(q, url),
-                    "trust_score": min(
-                        0.45,
-                        float(row.get("trust_score") or trust_score_for_domain(url)),
-                    ),
-                }
-                th = primary_theme_for_evidence(ev_snip)
-                if th:
-                    ev_snip["theme"] = th
-                evidence_list.append(ev_snip)
-                existing_urls.add(url)
-
         # Deduplicate near-identical bodies
         seen_fp: set[str] = set()
         deduped: list[EvidenceDict] = []
@@ -211,18 +192,49 @@ async def run_research_pipeline(
             seen_fp.add(fp)
             deduped.append(ev)
 
-        if len(deduped) < 2:
-            msg = (
-                "Limited evidence: few pages could be fetched or parsed. "
-                "Try again later, force refresh, or configure search/scrape providers."
-            )
-            llm_payload = SummarizeService(settings)._mock_summarize(display_name, deduped)
-            llm_payload.setdefault("confidence_score", 0.25)
-        else:
-            msg = None
-            summarizer = SummarizeService(settings)
-            llm_payload = await summarizer.summarize(display_name, deduped)
+        if not deduped:
+            # Use search snippets as minimal evidence so LLM can still produce something
+            for row in ranked[:6]:
+                snip = (row.get("snippet") or "").strip()
+                if len(snip) < 20:
+                    continue
+                q = row.get("query_used") or ""
+                deduped.append({
+                    "source_title": row.get("title"),
+                    "source_url": row.get("url") or "",
+                    "domain": row.get("domain") or _domain(row.get("url") or ""),
+                    "query": q,
+                    "snippet": snip,
+                    "extracted_text": snip,
+                    "category_hint": category_hint_from_query_and_url(q, row.get("url") or ""),
+                    "trust_score": float(row.get("trust_score") or 0.3),
+                })
 
+        if not deduped:
+            await mark_report_failed(session, report, "Could not extract any evidence")
+            await session.commit()
+            raise ResearchPipelineError(
+                f"Found search results for '{display_name}' but could not extract any usable content. "
+                "Try again later.",
+                code="no_evidence",
+            )
+
+        logger.info("Extracted %d evidence items for %r", len(deduped), display_name)
+
+        # --- 3. Summarize via LLM (Groq / OpenAI) ---
+        summarizer = SummarizeService(settings)
+        try:
+            llm_payload = await summarizer.summarize(display_name, deduped)
+        except Exception as e:
+            logger.exception("LLM summarization failed: %s", e)
+            await mark_report_failed(session, report, f"LLM failed: {e}")
+            await session.commit()
+            raise ResearchPipelineError(
+                f"Search succeeded but LLM summarization failed: {e}",
+                code="llm_failed",
+            ) from e
+
+        # --- 4. Build response ---
         theme_map = cluster_evidence_themes(deduped)
         clusters = [
             EvidenceCluster(theme=k, summary=None, evidence_indices=v)
@@ -254,15 +266,10 @@ async def run_research_pipeline(
             clusters,
             cached=False,
             report_id=report.id,
-            message=msg,
         )
-
-        if response.confidence_score < 0.35 and not response.message:
-            response.message = "Limited confidence: weak or sparse public evidence."
 
         sources_payload: list[dict[str, Any]] = []
         for row in ranked:
-            # attach extracted text if we have matching evidence
             ex = next((e for e in deduped if e.get("source_url") == row["url"]), None)
             sources_payload.append(
                 {
@@ -297,14 +304,12 @@ async def run_research_pipeline(
         await mark_report_failed(session, report, str(e))
         await session.commit()
         raise ResearchPipelineError(
-            "We could not finish gathering and summarizing sources. "
-            "Try again later or use mock providers for offline demos.",
+            f"Research failed for '{display_name}': {e}",
             code="research_pipeline_error",
         ) from e
 
 
 async def get_cached_by_name(session: AsyncSession, company_name: str) -> ResearchResponse | None:
-    """Return the latest completed cached report for a company name if within TTL."""
     settings = get_settings()
     norm = normalize_company_name(company_name)
     result = await session.execute(select(Company).where(Company.normalized_name == norm))
