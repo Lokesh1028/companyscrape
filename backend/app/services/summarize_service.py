@@ -74,7 +74,8 @@ class SummarizeService:
         company_name: str,
         evidence: list[EvidenceDict],
     ) -> dict[str, Any]:
-        if self.settings.llm_provider == "mock" or not self.settings.openai_api_key:
+        api_key = self.settings.llm_api_key
+        if self.settings.llm_provider == "mock" or not api_key:
             return self._mock_summarize(company_name, evidence)
 
         template = _load_prompt_template()
@@ -85,12 +86,12 @@ class SummarizeService:
         )
 
         client = AsyncOpenAI(
-            api_key=self.settings.openai_api_key,
-            base_url=self.settings.openai_base_url,
+            api_key=api_key,
+            base_url=self.settings.llm_base_url,
         )
         try:
             resp = await client.chat.completions.create(
-                model=self.settings.openai_model,
+                model=self.settings.llm_model_name,
                 messages=[
                     {
                         "role": "system",

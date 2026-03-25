@@ -115,8 +115,8 @@ On **Report**, use **Sample report** to load `public/mock-research-response.json
 | `CORS_ORIGINS`, `CORS_ORIGIN_REGEX` | Browser access to API |
 | `ENVIRONMENT`, `API_VERSION` | Health payload |
 | `SEARCH_PROVIDER` | Default **`serpapi`** (needs `SERPAPI_API_KEY`); else falls back to mock. Also: `google_cse`, explicit `mock` |
-| `LLM_PROVIDER` | `mock` / `openai_compatible` |
-| `OPENAI_*`, `SERPAPI_*`, `GOOGLE_*` | Live providers |
+| `LLM_PROVIDER` | `mock` / `openai_compatible` / `groq` |
+| `OPENAI_*`, `GROQ_*`, `SERPAPI_*`, `GOOGLE_*` | Live providers |
 | `DATABASE_URL` | SQLite or `postgresql+asyncpg://...` |
 | `NEXT_PUBLIC_API_BASE_URL` | Frontend → API (no trailing slash) |
 
@@ -151,6 +151,7 @@ This repo now includes a root `render.yaml` Blueprint for:
 - `DATABASE_URL` is set from the managed Postgres connection string.
 - The app normalizes Render's `postgresql://...` connection string to `postgresql+asyncpg://...` automatically.
 - The first deploy works without third-party API keys. Search falls back to fixture data if no live search key is set, and the LLM remains in `mock` mode until you switch `LLM_PROVIDER`.
+- Groq is supported through its OpenAI-compatible endpoint using dedicated `GROQ_*` environment variables.
 
 ### Deploy steps
 
@@ -158,12 +159,14 @@ This repo now includes a root `render.yaml` Blueprint for:
 2. Keep the generated service names or change them consistently in `render.yaml`.
 3. During setup, provide any optional secrets you want to enable:
    - `OPENAI_API_KEY`
+   - `GROQ_API_KEY`
    - `SERPAPI_API_KEY`
    - `GOOGLE_API_KEY`
    - `GOOGLE_CSE_ID`
 4. If you want live OpenAI summaries, set `LLM_PROVIDER=openai_compatible` on the API service.
-5. Deploy the Blueprint.
-6. Open the `companyscrape-web` URL after both services finish deploying.
+5. If you want Groq instead, set `LLM_PROVIDER=groq` on the API service.
+6. Deploy the Blueprint.
+7. Open the `companyscrape-web` URL after both services finish deploying.
 
 ### Notes
 

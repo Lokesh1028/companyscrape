@@ -23,6 +23,10 @@ services:
         value: https://api.openai.com/v1
       - key: OPENAI_MODEL
         value: gpt-4o-mini
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
       - key: SERPAPI_API_KEY
         sync: false
       - key: GOOGLE_API_KEY
@@ -30,6 +34,8 @@ services:
       - key: GOOGLE_CSE_ID
         sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
         sync: false
 
   - type: web

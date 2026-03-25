@@ -91,8 +91,8 @@ class Settings(BaseSettings):
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
     google_cse_id: str | None = Field(default=None, alias="GOOGLE_CSE_ID")
 
-    # LLM (OpenAI-compatible)
-    llm_provider: Literal["openai_compatible", "mock"] = Field(
+    # LLM (OpenAI-compatible or Groq)
+    llm_provider: Literal["openai_compatible", "groq", "mock"] = Field(
         default="mock",
         alias="LLM_PROVIDER",
     )
@@ -102,6 +102,15 @@ class Settings(BaseSettings):
         alias="OPENAI_BASE_URL",
     )
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
+    groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
+    groq_base_url: str = Field(
+        default="https://api.groq.com/openai/v1",
+        alias="GROQ_BASE_URL",
+    )
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        alias="GROQ_MODEL",
+    )
 
     # Scraping / research limits
     http_timeout_seconds: float = Field(default=20.0, alias="HTTP_TIMEOUT_SECONDS")
@@ -143,6 +152,26 @@ class Settings(BaseSettings):
                     raw.append(o)
                     seen.add(o)
         return raw
+
+    @property
+    def llm_api_key(self) -> str | None:
+        if self.llm_provider == "groq":
+            return self.groq_api_key
+        if self.llm_provider == "openai_compatible":
+            return self.openai_api_key
+        return None
+
+    @property
+    def llm_base_url(self) -> str:
+        if self.llm_provider == "groq":
+            return self.groq_base_url
+        return self.openai_base_url
+
+    @property
+    def llm_model_name(self) -> str:
+        if self.llm_provider == "groq":
+            return self.groq_model
+        return self.openai_model
 
 
 @lru_cache
