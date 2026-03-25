@@ -21,11 +21,39 @@ class Settings(BaseSettings):
     debug: bool = False
     api_prefix: str = ""
 
+    @field_validator("debug", mode="before")
+    @classmethod
+    def _normalize_debug(cls, v: object) -> bool:
+        if isinstance(v, bool):
+            return v
+        if v is None:
+            return False
+        raw = str(v).strip().lower()
+        if raw in {"1", "true", "yes", "on", "debug", "development", "dev"}:
+            return True
+        if raw in {"0", "false", "no", "off", "release", "production", "prod"}:
+            return False
+        return raw == "true"
+
     # Database: postgresql+asyncpg://... or sqlite+aiosqlite:///./dev.db
     database_url: str = Field(
         default="sqlite+aiosqlite:///./dev.db",
         alias="DATABASE_URL",
     )
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, v: object) -> str:
+        raw = str(v).strip() if v is not None else ""
+        if not raw:
+            return "sqlite+aiosqlite:///./dev.db"
+        # Render Postgres exposes a standard postgresql:// URL, but the app uses
+        # SQLAlchemy's async engine and therefore needs the asyncpg driver prefix.
+        if raw.startswith("postgresql://"):
+            return raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if raw.startswith("postgres://"):
+            return raw.replace("postgres://", "postgresql+asyncpg://", 1)
+        return raw
 
     # CORS — comma-separated origins (include 127.0.0.1 for local Next.js)
     cors_origins: str = Field(

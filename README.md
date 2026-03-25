@@ -134,6 +134,42 @@ Set in `backend/.env`:
 
 Tables are created on startup (`create_all`). Use Alembic for production migrations.
 
+## Deploy on Render
+
+This repo now includes a root `render.yaml` Blueprint for:
+
+- `companyscrape-api` as a Python web service
+- `companyscrape-web` as a Node/Next.js web service
+- `companyscrape-db` as a Render Postgres database
+
+### What the Blueprint configures
+
+- The backend runs with `uvicorn` on `0.0.0.0:$PORT`, matching Render's web-service requirement.
+- The frontend is built from `frontend/` and started with `next start --hostname 0.0.0.0 --port $PORT`.
+- `NEXT_PUBLIC_API_BASE_URL` is set from the backend service's `RENDER_EXTERNAL_URL`.
+- `CORS_ORIGINS` is set from the frontend service's `RENDER_EXTERNAL_URL`.
+- `DATABASE_URL` is set from the managed Postgres connection string.
+- The app normalizes Render's `postgresql://...` connection string to `postgresql+asyncpg://...` automatically.
+- The first deploy works without third-party API keys. Search falls back to fixture data if no live search key is set, and the LLM remains in `mock` mode until you switch `LLM_PROVIDER`.
+
+### Deploy steps
+
+1. In Render, create a new **Blueprint** and point it at this repository.
+2. Keep the generated service names or change them consistently in `render.yaml`.
+3. During setup, provide any optional secrets you want to enable:
+   - `OPENAI_API_KEY`
+   - `SERPAPI_API_KEY`
+   - `GOOGLE_API_KEY`
+   - `GOOGLE_CSE_ID`
+4. If you want live OpenAI summaries, set `LLM_PROVIDER=openai_compatible` on the API service.
+5. Deploy the Blueprint.
+6. Open the `companyscrape-web` URL after both services finish deploying.
+
+### Notes
+
+- If you add a custom domain to the frontend later, update `CORS_ORIGINS` on the API service to include that domain too.
+- Free instances are fine for initial deployment, but they can sleep and are not ideal for production traffic.
+
 ## Tests
 
 ```bash
